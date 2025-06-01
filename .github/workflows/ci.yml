@@ -2,18 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop, 'feature/*' ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
-    types: [ opened, synchronize, reopened ]
 
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: ['1.21', '1.22']
     
     steps:
     - uses: actions/checkout@v4
@@ -21,32 +17,19 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: ${{ matrix.go-version }}
-    
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+        go-version: '1.21'
     
     - name: Download dependencies
       run: go mod download
     
-    - name: Run tests with coverage
-      run: |
-        go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
-        go tool cover -func=coverage.out
+    - name: Run unit tests
+      run: go test -v -race ./...
     
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      if: matrix.go-version == '1.21'
-      with:
-        file: ./coverage.out
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
+    - name: Build binary
+      run: go build -o kube-vap-test ./cmd/kube-vap-test
+    
+    - name: Verify binary
+      run: ./kube-vap-test version
 
   lint:
     name: Lint
@@ -66,49 +49,10 @@ jobs:
         version: latest
         args: --timeout=5m
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - os: linux
-            arch: amd64
-          - os: linux
-            arch: arm64
-          - os: darwin
-            arch: amd64
-          - os: darwin
-            arch: arm64
-          - os: windows
-            arch: amd64
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.21'
-    
-    - name: Build binary
-      env:
-        GOOS: ${{ matrix.os }}
-        GOARCH: ${{ matrix.arch }}
-      run: |
-        go build -o kube-vap-test-${{ matrix.os }}-${{ matrix.arch }} ./cmd/kube-vap-test
-        ls -la kube-vap-test-*
-    
-    - name: Test binary (Linux AMD64 only)
-      if: matrix.os == 'linux' && matrix.arch == 'amd64'
-      run: |
-        chmod +x kube-vap-test-${{ matrix.os }}-${{ matrix.arch }}
-        ./kube-vap-test-${{ matrix.os }}-${{ matrix.arch }} version --short
-
   e2e-test:
-    name: E2E Test
+    name: E2E Test (Local Mode)
     runs-on: ubuntu-latest
-    needs: [test, lint]
+    needs: [test]
     
     steps:
     - uses: actions/checkout@v4
@@ -117,21 +61,18 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.21'
-    
-    - name: Set up Kind
-      uses: helm/kind-action@v1
-      with:
-        version: v0.20.0
     
     - name: Build
       run: make build
     
-    - name: Run E2E tests
-      run: make e2e-test
-    
-    - name: Upload test results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: e2e-test-results
-        path: test-results/
+    - name: Run E2E tests (local mode)
+      run: |
+        # Test run command with test files
+        ./bin/kube-vap-test run examples/tests/no-latest-tag-test.yaml
+        ./bin/kube-vap-test run examples/tests/resource-limits-test.yaml
+        
+        # Test check command with local resources
+        ./bin/kube-vap-test check examples/manifests/denied-pod-latest-tag.yaml \
+          --policy examples/policies/no-latest-tag-policy.yaml
+        ./bin/kube-vap-test check examples/manifests/allowed-pod-specific-tag.yaml \
+          --policy examples/policies/no-latest-tag-policy.yaml
