@@ -1,0 +1,89 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "complex-matchconditions-policy"
+spec:
+  # Complex matchConditions with various CEL expressions
+  matchConditions:
+  # Condition 1: Check namespace and labels
+  - name: "namespace-and-labels"
+    expression: |
+      object.metadata.namespace in ['production', 'staging'] &&
+      has(object.metadata.labels.environment) &&
+      object.metadata.labels.environment == object.metadata.namespace
+  
+  # Condition 2: Check resource type and version
+  - name: "resource-type-check"
+    expression: |
+      object.kind in ['Deployment', 'StatefulSet', 'DaemonSet'] &&
+      object.apiVersion.startsWith('apps/')
+  
+  # Condition 3: Complex label matching
+  - name: "complex-label-matching"
+    expression: |
+      has(object.metadata.labels.tier) &&
+      object.metadata.labels.tier in ['frontend', 'backend', 'database'] &&
+      (
+        (object.metadata.labels.tier == 'frontend' && has(object.metadata.labels.expose)) ||
+        (object.metadata.labels.tier == 'backend' && has(object.metadata.labels.service)) ||
+        (object.metadata.labels.tier == 'database' && has(object.metadata.labels.persistent))
+      )
+  
+  # Condition 4: Annotation-based conditions
+  - name: "annotation-conditions"
+    expression: |
+      has(object.metadata.annotations) &&
+      'policy.example.com/validate' in object.metadata.annotations &&
+      object.metadata.annotations['policy.example.com/validate'] == 'true'
+  
+  # Condition 5: Complex spec validation
+  - name: "spec-validation"
+    expression: |
+      has(object.spec.replicas) &&
+      object.spec.replicas > 0 &&
+      (
+        object.metadata.namespace == 'production' ? object.spec.replicas >= 2 :
+        object.metadata.namespace == 'staging' ? object.spec.replicas >= 1 :
+        true
+      )
+  
+  # Variables for validation
+  variables:
+  - name: "replicaCount"
+    expression: "object.spec.replicas"
+  - name: "tier"
+    expression: "object.metadata.labels.tier"
+  - name: "isProduction"
+    expression: "object.metadata.namespace == 'production'"
+  - name: "hasCriticalLabel"
+    expression: |
+      has(object.metadata.labels.critical) && 
+      object.metadata.labels.critical == 'true'
+  
+  # Validations
+  validations:
+  - expression: |
+      variables.tier != 'database' || variables.replicaCount >= 3
+    message: "Database tier must have at least 3 replicas"
+    messageExpression: |
+      'Database tier deployment "' + object.metadata.name + 
+      '" has only ' + string(variables.replicaCount) + 
+      ' replicas. Database deployments require at least 3 replicas for HA.'
+  
+  - expression: |
+      !variables.isProduction || !variables.hasCriticalLabel || 
+      has(object.spec.template.spec.priorityClassName)
+    message: "Critical production workloads must have priorityClassName set"
+    messageExpression: |
+      'Critical production deployment "' + object.metadata.name + 
+      '" must have priorityClassName set for resource guarantees.'
+  
+  - expression: |
+      variables.tier != 'frontend' || 
+      object.spec.template.spec.containers.all(c, 
+        has(c.resources.limits) && has(c.resources.limits.memory)
+      )
+    message: "Frontend containers must have memory limits"
+    messageExpression: |
+      'Frontend deployment "' + object.metadata.name + 
+      '" has containers without memory limits. All frontend containers must have memory limits to prevent OOM.'

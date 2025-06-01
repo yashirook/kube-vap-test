@@ -1,0 +1,49 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: cel-patterns-test-policy
+spec:
+  failurePolicy: Fail
+  validations:
+    - expression: "has(object.metadata.labels) && has(object.metadata.labels.app)"
+      message: "メタデータにapp labelが必要です"
+      reason: LabelRequired
+    - expression: "object.metadata.name.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')"
+      message: "リソース名は小文字英数字とハイフン、ドットのみ使用可能です"
+      reason: InvalidName
+    - expression: "object.spec.replicas <= 10"
+      message: "レプリカ数は10以下である必要があります"
+      reason: TooManyReplicas
+    - expression: "!has(object.metadata.annotations) || !has(object.metadata.annotations['example.com/skip-validation']) || object.metadata.annotations['example.com/skip-validation'] != 'true'"
+      message: "検証スキップアノテーションが設定されています"
+      reason: ValidationSkipped
+    - expression: "object.spec.containers.all(c, !has(c.env) || !c.env.exists(e, e.name == 'SECRET_KEY'))"
+      message: "環境変数にSECRET_KEYを直接指定することはできません"
+      reason: ForbiddenEnvVar
+    - expression: "size(object.spec.containers) <= 5"
+      message: "コンテナ数は5以下である必要があります"
+      reason: TooManyContainers
+    - expression: "!has(object.spec.hostNetwork) || object.spec.hostNetwork == false"
+      message: "hostNetworkの使用は許可されていません"
+      reason: HostNetworkForbidden
+    - expression: "object.spec.containers.all(c, (has(c.resources) && has(c.resources.limits) && has(c.resources.limits.memory)))"
+      message: "すべてのコンテナにはメモリリミットの設定が必要です"
+      reason: MemoryLimitRequired
+    - expression: "object.spec.containers.all(c, (has(c.resources) && has(c.resources.limits) && has(c.resources.limits.cpu)))"
+      message: "すべてのコンテナにはCPUリミットの設定が必要です"
+      reason: CPULimitRequired
+    - expression: "has(object.spec.containers) && object.spec.containers.exists(c, has(c.image) && c.image.startsWith('internal-registry/'))"
+      message: "少なくとも1つのコンテナで内部レジストリからのイメージを使用する必要があります"
+      reason: InternalRegistryRequired
+    - expression: "has(object.metadata.labels) && object.metadata.labels.size() >= 3"
+      message: "少なくとも3つのラベルが必要です"
+      reason: NotEnoughLabels
+    - expression: "type(object.spec.replicas) == int"
+      message: "replicasは整数値である必要があります"
+      reason: InvalidType
+    - expression: "has(object.spec.selector) ? object.spec.selector.size() > 0 : true"
+      message: "selectorが指定されている場合は少なくとも1つの選択基準が必要です"
+      reason: EmptySelector
+    - expression: "!has(object.metadata.annotations) || object.metadata.annotations.all(k, k.size() <= 63)"
+      message: "アノテーションキーの長さは63文字以下である必要があります"
+      reason: KeyTooLong 

@@ -1,0 +1,300 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: k8s-1.31-ip-cidr-test
+spec:
+  source:
+    type: local
+    files:
+      - "examples/policies/k8s-1.31-ip-cidr-policy.yaml"
+  testCases:
+  # Valid IP address tests
+  - name: valid-ipv4-host-ip
+    description: Valid IPv4 host IP should be allowed
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: valid-ipv4-pod
+      spec:
+        hostIP: "192.168.1.100"
+        containers:
+        - name: nginx
+          image: nginx:latest
+    expected:
+      allowed: true
+      
+  - name: valid-ipv6-host-ip
+    description: Valid IPv6 host IP should be allowed
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: valid-ipv6-pod
+      spec:
+        hostIP: "2001:db8::1"
+        containers:
+        - name: nginx
+          image: nginx:latest
+    expected:
+      allowed: true
+      
+  # Invalid IP address tests
+  - name: invalid-ip-address
+    description: Invalid IP address should be denied
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: invalid-ip-pod
+      spec:
+        hostIP: "192.168.1.256"
+        containers:
+        - name: nginx
+          image: nginx:latest
+    expected:
+      allowed: false
+      message: "hostIP must be a valid IP address"
+      
+  - name: loopback-address-denied
+    description: Loopback address should be denied
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: loopback-pod
+      spec:
+        hostIP: "127.0.0.1"
+        containers:
+        - name: nginx
+          image: nginx:latest
+    expected:
+      allowed: false
+      message: "hostIP cannot be a loopback address"
+      
+  - name: non-global-unicast-external-ip
+    description: Non-global unicast external IP should be denied
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: test-service
+      spec:
+        externalIP: "169.254.1.1"  # Link-local address
+        ports:
+        - port: 80
+    expected:
+      allowed: false
+      message: "externalIP must be a global unicast address"
+      
+  # CIDR tests
+  - name: valid-cidr
+    description: Valid CIDR should be allowed
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: cidr-service
+      spec:
+        podCIDR: "10.0.0.0/16"
+    expected:
+      allowed: true
+      
+  - name: invalid-cidr-notation
+    description: Invalid CIDR notation should be denied
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: invalid-cidr-service
+      spec:
+        podCIDR: "10.0.0.0/33"
+    expected:
+      allowed: false
+      message: "podCIDR must be a valid CIDR notation"
+      
+  - name: cidr-prefix-too-small
+    description: CIDR prefix too small should be denied
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: small-prefix-service
+      spec:
+        podCIDR: "10.0.0.0/8"
+    expected:
+      allowed: false
+      message: "podCIDR must have a prefix length of at least /16"
+      
+  - name: non-canonical-cidr
+    description: Non-canonical CIDR should be denied
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: non-canonical-service
+      spec:
+        podCIDR: "10.0.0.1/16"  # Should be 10.0.0.0/16
+    expected:
+      allowed: false
+      message: "podCIDR must be in canonical form (network address)"
+      
+  # Combined IP and CIDR tests
+  - name: pod-ip-within-allowed-cidr
+    description: Pod IP within allowed CIDR should be allowed
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: allowed-pod
+      spec:
+        podIP: "10.0.1.5"
+        allowedCIDR: "10.0.0.0/16"
+        containers:
+        - name: nginx
+          image: nginx:latest
+    expected:
+      allowed: true
+      
+  - name: pod-ip-outside-allowed-cidr
+    description: Pod IP outside allowed CIDR should be denied
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: denied-pod
+      spec:
+        podIP: "192.168.1.5"
+        allowedCIDR: "10.0.0.0/16"
+        containers:
+        - name: nginx
+          image: nginx:latest
+    expected:
+      allowed: false
+      message: "podIP must be within the allowed CIDR range"
+      
+  # DNS format tests
+  - name: valid-dns1123-label
+    description: Valid DNS1123 label should be allowed
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: valid-dns-name
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:latest
+    expected:
+      allowed: true
+      
+  - name: invalid-dns1123-label
+    description: Invalid DNS1123 label should be denied
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: Invalid_Name
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:latest
+    expected:
+      allowed: false
+      messageContains: "Invalid DNS1123 label"
+      
+  - name: valid-dns-subdomain
+    description: Valid DNS subdomain should be allowed
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: test-service
+      spec:
+        hostname: "api.example.com"
+    expected:
+      allowed: true
+      
+  - name: invalid-dns-subdomain
+    description: Invalid DNS subdomain should be denied
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: test-service
+      spec:
+        hostname: "api.example.com."  # Trailing dot not allowed
+    expected:
+      allowed: false
+      message: "hostname must be a valid DNS subdomain"
+      
+  # UUID validation
+  - name: valid-uuid
+    description: Valid UUID should be allowed
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: test-service
+      spec:
+        requestID: "123e4567-e89b-12d3-a456-426614174000"
+    expected:
+      allowed: true
+      
+  - name: invalid-uuid
+    description: Invalid UUID should be denied
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: test-service
+      spec:
+        requestID: "not-a-uuid"
+    expected:
+      allowed: false
+      message: "requestID must be a valid UUID"
+      
+  # URI validation
+  - name: valid-uri
+    description: Valid URI should be allowed
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: test-service
+      spec:
+        webhookURL: "https://example.com/webhook"
+    expected:
+      allowed: true
+      
+  - name: invalid-uri
+    description: Invalid URI should be denied
+    operation: CREATE
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: test-service
+      spec:
+        webhookURL: "not a valid uri"
+    expected:
+      allowed: false
+      message: "webhookURL must be a valid URI"

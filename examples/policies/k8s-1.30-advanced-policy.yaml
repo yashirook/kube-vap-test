@@ -1,0 +1,67 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "advanced-k8s-1.30-policy"
+spec:
+  # Advanced matchConditions using K8s 1.30 features
+  matchConditions:
+  - name: "production-or-critical-namespace"
+    expression: "object.metadata.namespace in ['production', 'critical']"
+  - name: "deployment-workload"
+    expression: "object.kind == 'Deployment'"
+  - name: "has-required-labels"
+    expression: "has(object.metadata.labels.app) && has(object.metadata.labels.version)"
+  
+  # Variables for complex evaluations
+  variables:
+  - name: "replicaCount"
+    expression: "object.spec.replicas"
+  - name: "containerNames"
+    expression: "object.spec.template.spec.containers.map(c, c.name)"
+  - name: "hasNginx"
+    expression: "object.spec.template.spec.containers.exists(c, c.name == 'nginx')"
+  - name: "isHighResourceApp"
+    expression: "variables.replicaCount > 5"
+  - name: "securityLevel"
+    expression: |
+      object.metadata.labels.exists(k, k == 'security-level') ? 
+      object.metadata.labels['security-level'] : 'standard'
+  
+  # Comprehensive validations with messageExpression
+  validations:
+  - expression: "variables.replicaCount >= 2"
+    message: "Production deployments must have at least 2 replicas for high availability"
+    messageExpression: |
+      'Deployment "' + object.metadata.name + '" has only ' + string(variables.replicaCount) + 
+      ' replica(s). Production deployments require at least 2 replicas for high availability.'
+  
+  - expression: "variables.replicaCount <= 10"
+    message: "Too many replicas"
+    messageExpression: |
+      'Deployment "' + object.metadata.name + '" requests ' + string(variables.replicaCount) + 
+      ' replicas, but the maximum allowed is 10. Consider horizontal scaling or resource optimization.'
+  
+  - expression: "!variables.isHighResourceApp || variables.hasNginx"
+    message: "High-resource applications must include nginx for load balancing"
+    messageExpression: |
+      'High-resource deployment "' + object.metadata.name + '" with ' + string(variables.replicaCount) + 
+      ' replicas must include nginx container for load balancing.'
+  
+  - expression: |
+      variables.securityLevel != 'high' || 
+      object.spec.template.spec.containers.all(c, 
+        !has(c.securityContext.privileged) || c.securityContext.privileged == false
+      )
+    message: "High-security applications cannot run privileged containers"
+    messageExpression: |
+      'Deployment "' + object.metadata.name + '" is marked as security-level=' + variables.securityLevel + 
+      ' but contains privileged containers. High-security applications must run with non-privileged containers only.'
+  
+  - expression: |
+      object.spec.template.spec.containers.all(c,
+        has(c.resources.requests.memory) && has(c.resources.requests.cpu)
+      )
+    message: "All containers must specify resource requests"
+    messageExpression: |
+      'Deployment "' + object.metadata.name + '" has containers without resource requests. ' +
+      'All production containers must specify CPU and memory requests.'

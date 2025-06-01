@@ -1,0 +1,323 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: complex-matchconditions-test
+spec:
+  source:
+    type: local
+    files:
+      - examples/policies/complex-matchconditions-policy.yaml
+  testCases:
+  # Test 1: All conditions match - database tier in production
+  - name: "production-database-sufficient-replicas"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: user-db
+        namespace: production
+        labels:
+          environment: production
+          tier: database
+          persistent: "true"
+          critical: "true"
+        annotations:
+          policy.example.com/validate: "true"
+      spec:
+        replicas: 3
+        template:
+          spec:
+            priorityClassName: high-priority
+            containers:
+            - name: postgres
+              image: postgres:14
+    operation: CREATE
+    expected:
+      allowed: true
+
+  # Test 2: Database tier with insufficient replicas
+  - name: "production-database-insufficient-replicas"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: user-db
+        namespace: production
+        labels:
+          environment: production
+          tier: database
+          persistent: "true"
+        annotations:
+          policy.example.com/validate: "true"
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+            - name: postgres
+              image: postgres:14
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'Database tier deployment "user-db" has only 2 replicas. Database deployments require at least 3 replicas for HA.'
+
+  # Test 3: Critical production without priorityClassName
+  - name: "critical-production-no-priority"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: critical-app
+        namespace: production
+        labels:
+          environment: production
+          tier: backend
+          service: "api"
+          critical: "true"
+        annotations:
+          policy.example.com/validate: "true"
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+            - name: app
+              image: myapp:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'Critical production deployment "critical-app" must have priorityClassName set for resource guarantees.'
+
+  # Test 4: Frontend without memory limits
+  - name: "frontend-no-memory-limits"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: web-frontend
+        namespace: staging
+        labels:
+          environment: staging
+          tier: frontend
+          expose: "true"
+        annotations:
+          policy.example.com/validate: "true"
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21
+              resources:
+                limits:
+                  cpu: 500m
+            - name: app
+              image: frontend:v2.0.0
+              resources:
+                requests:
+                  memory: 256Mi
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'Frontend deployment "web-frontend" has containers without memory limits. All frontend containers must have memory limits to prevent OOM.'
+
+  # Test 5: Namespace mismatch (matchCondition fails)
+  - name: "namespace-environment-mismatch"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: mismatched-app
+        namespace: production
+        labels:
+          environment: staging  # Mismatch with namespace
+          tier: backend
+          service: "api"
+        annotations:
+          policy.example.com/validate: "true"
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+            - name: app
+              image: myapp:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't apply due to matchCondition failure
+
+  # Test 6: Wrong resource kind (matchCondition fails)
+  - name: "service-resource-ignored"
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: api-service
+        namespace: production
+        labels:
+          environment: production
+          tier: backend
+        annotations:
+          policy.example.com/validate: "true"
+      spec:
+        selector:
+          app: api
+        ports:
+        - port: 80
+          targetPort: 8080
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't apply to Services
+
+  # Test 7: Missing required label (matchCondition fails)
+  - name: "missing-tier-label"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: unlabeled-app
+        namespace: production
+        labels:
+          environment: production
+          # Missing tier label
+        annotations:
+          policy.example.com/validate: "true"
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+            - name: app
+              image: myapp:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't apply without tier label
+
+  # Test 8: Wrong tier-specific label (matchCondition fails)
+  - name: "frontend-missing-expose-label"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend-app
+        namespace: production
+        labels:
+          environment: production
+          tier: frontend
+          # Missing 'expose' label required for frontend
+        annotations:
+          policy.example.com/validate: "true"
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+            - name: app
+              image: frontend:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't apply without proper tier-specific label
+
+  # Test 9: Missing validate annotation (matchCondition fails)
+  - name: "missing-validate-annotation"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: non-validated-app
+        namespace: production
+        labels:
+          environment: production
+          tier: database
+          persistent: "true"
+        # Missing annotations entirely
+      spec:
+        replicas: 1  # Would fail if policy applied
+        template:
+          spec:
+            containers:
+            - name: app
+              image: myapp:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't apply without validate annotation
+
+  # Test 10: Zero replicas (matchCondition fails)
+  - name: "zero-replicas"
+    object:
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: scaled-down-db
+        namespace: production
+        labels:
+          environment: production
+          tier: database
+          persistent: "true"
+        annotations:
+          policy.example.com/validate: "true"
+      spec:
+        replicas: 0  # Fails spec-validation matchCondition
+        template:
+          spec:
+            containers:
+            - name: db
+              image: postgres:14
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't apply to zero-replica deployments
+
+  # Test 11: Complex staging scenario (all conditions match)
+  - name: "staging-backend-valid"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: staging-api
+        namespace: staging
+        labels:
+          environment: staging
+          tier: backend
+          service: "api"
+        annotations:
+          policy.example.com/validate: "true"
+      spec:
+        replicas: 1  # Allowed in staging
+        template:
+          spec:
+            containers:
+            - name: api
+              image: backend:v1.0.0
+              resources:
+                limits:
+                  memory: 512Mi
+                  cpu: 500m
+    operation: CREATE
+    expected:
+      allowed: true
+
+  # Test 12: Wrong annotation value (matchCondition fails)
+  - name: "validate-annotation-false"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: non-validated-app
+        namespace: production
+        labels:
+          environment: production
+          tier: database
+          persistent: "true"
+        annotations:
+          policy.example.com/validate: "false"  # Not "true"
+      spec:
+        replicas: 1  # Would fail if policy applied
+        template:
+          spec:
+            containers:
+            - name: app
+              image: myapp:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't apply when validate != "true"

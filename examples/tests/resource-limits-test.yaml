@@ -1,0 +1,34 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: resource-limits-test
+spec:
+  source:
+    type: local
+    files:
+      - "./examples/policies/resource-limits-policy.yaml"
+  testCases:
+  - name: "allowed-pod-with-resource-limits"
+    description: "Pods with resource limits are allowed"
+    objectFile: "../manifests/allowed-pod-with-resource-limits.yaml"
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "denied-pod-without-resource-limits"
+    description: "Pods without resource limits are denied"
+    objectFile: "../manifests/denied-pod-without-resource-limits.yaml"
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "ResourceLimitsPolicy"
+      messageContains: "All containers must have memory and CPU resource limits"
+  
+  - name: "denied-pod-with-partial-limits"
+    description: "Pods with partial resource limits are denied"
+    objectFile: "../manifests/denied-pod-with-partial-limits.yaml"
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "ResourceLimitsPolicy"
+      messageContains: "All containers must have memory and CPU resource limits" 

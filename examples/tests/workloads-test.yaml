@@ -1,0 +1,307 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: workloads-resource-limits-test
+spec:
+  source:
+    type: local
+    files:
+      - "./examples/policies/resource-limits-workloads-policy.yaml"
+  testCases:
+  - name: "allowed-deployment-with-resources"
+    description: "Deployments with resource limits are allowed"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: nginx-deployment
+        namespace: default
+      spec:
+        replicas: 3
+        selector:
+          matchLabels:
+            app: nginx
+        template:
+          metadata:
+            labels:
+              app: nginx
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21.0
+              ports:
+              - containerPort: 80
+              resources:
+                limits:
+                  memory: "256Mi"
+                  cpu: "500m"
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "allowed-deployment-with-multiple-containers-all-with-resources"
+    description: "Deployments with multiple containers all having resource limits are allowed"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: multi-container-deployment
+        namespace: default
+      spec:
+        replicas: 2
+        selector:
+          matchLabels:
+            app: multi-nginx
+        template:
+          metadata:
+            labels:
+              app: multi-nginx
+          spec:
+            containers:
+            - name: nginx-1
+              image: nginx:1.21.0
+              ports:
+              - containerPort: 80
+              resources:
+                limits:
+                  memory: "128Mi"
+                  cpu: "250m"
+                requests:
+                  memory: "64Mi"
+                  cpu: "100m"
+            - name: nginx-2
+              image: nginx:1.21.0
+              ports:
+              - containerPort: 8080
+              resources:
+                limits:
+                  memory: "128Mi"
+                  cpu: "250m"
+                requests:
+                  memory: "64Mi"
+                  cpu: "100m"
+    operation: CREATE
+    expected:
+      allowed: true
+
+  - name: "denied-deployment-without-resources"
+    description: "Deployments without resource limits are denied"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: nginx-deployment-no-resources
+        namespace: default
+      spec:
+        replicas: 3
+        selector:
+          matchLabels:
+            app: nginx-no-resources
+        template:
+          metadata:
+            labels:
+              app: nginx-no-resources
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21.0
+              ports:
+              - containerPort: 80
+              # No resource limits
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "ResourceLimitsPolicy"
+      messageContains: "All containers must have resource limits"
+  
+  - name: "denied-deployment-with-multiple-containers-one-without-resources"
+    description: "Deployments with multiple containers where some lack resource limits are denied"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: multi-container-partial-resources
+        namespace: default
+      spec:
+        replicas: 2
+        selector:
+          matchLabels:
+            app: multi-nginx-partial
+        template:
+          metadata:
+            labels:
+              app: multi-nginx-partial
+          spec:
+            containers:
+            - name: nginx-with-resources
+              image: nginx:1.21.0
+              ports:
+              - containerPort: 80
+              resources:
+                limits:
+                  memory: "128Mi"
+                  cpu: "250m"
+                requests:
+                  memory: "64Mi"
+                  cpu: "100m"
+            - name: nginx-without-resources
+              image: nginx:1.21.0
+              ports:
+              - containerPort: 8080
+              # This container has no resource limits
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "ResourceLimitsPolicy"
+      messageContains: "All containers must have resource limits"
+
+  - name: "allowed-statefulset-with-resources"
+    description: "StatefulSets with resource limits are allowed"
+    object:
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: web
+        namespace: default
+      spec:
+        serviceName: "nginx"
+        replicas: 2
+        selector:
+          matchLabels:
+            app: nginx
+        template:
+          metadata:
+            labels:
+              app: nginx
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21.0
+              ports:
+              - containerPort: 80
+                name: web
+              resources:
+                limits:
+                  memory: "512Mi"
+                  cpu: "1000m"
+                requests:
+                  memory: "256Mi"
+                  cpu: "500m"
+        volumeClaimTemplates:
+        - metadata:
+            name: www
+          spec:
+            accessModes: [ "ReadWriteOnce" ]
+            resources:
+              requests:
+                storage: 1Gi
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "denied-statefulset-without-resources"
+    description: "StatefulSets without resource limits are denied"
+    object:
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: web-no-resources
+        namespace: default
+      spec:
+        serviceName: "nginx-no-resources"
+        replicas: 2
+        selector:
+          matchLabels:
+            app: nginx-no-resources
+        template:
+          metadata:
+            labels:
+              app: nginx-no-resources
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21.0
+              ports:
+              - containerPort: 80
+                name: web
+              # No resource limits
+        volumeClaimTemplates:
+        - metadata:
+            name: www
+          spec:
+            accessModes: [ "ReadWriteOnce" ]
+            resources:
+              requests:
+                storage: 1Gi
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "ResourceLimitsPolicy"
+      messageContains: "All containers must have resource limits"
+  
+  - name: "allowed-customworkload-with-resources"
+    description: "Custom workloads with resource limits are allowed"
+    object:
+      apiVersion: custom.example.com/v1
+      kind: CustomWorkload
+      metadata:
+        name: custom-app
+        namespace: default
+      spec:
+        replicas: 1
+        template:
+          metadata:
+            labels:
+              app: custom-app
+          spec:
+            containers:
+            - name: custom-container
+              image: custom-image:1.0.0
+              ports:
+              - containerPort: 8080
+              resources:
+                limits:
+                  memory: "256Mi"
+                  cpu: "500m"
+                requests:
+                  memory: "128Mi"
+                  cpu: "250m"
+        customConfig:
+          key1: value1
+          key2: value2
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "denied-customworkload-without-resources"
+    description: "Custom workloads without resource limits are denied"
+    object:
+      apiVersion: custom.example.com/v1
+      kind: CustomWorkload
+      metadata:
+        name: custom-app-no-resources
+        namespace: default
+      spec:
+        replicas: 1
+        template:
+          metadata:
+            labels:
+              app: custom-app-no-resources
+          spec:
+            containers:
+            - name: custom-container
+              image: custom-image:1.0.0
+              ports:
+              - containerPort: 8080
+              # No resource limits
+        customConfig:
+          key1: value1
+          key2: value2
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "ResourceLimitsPolicy"
+      messageContains: "All containers must have resource limits" 

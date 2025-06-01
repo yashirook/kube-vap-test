@@ -1,0 +1,144 @@
+name: Test
+
+on:
+  push:
+    branches: [ main, feature/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  unit-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Install dependencies
+      run: go mod download
+    
+    - name: Run unit tests
+      run: |
+        go test -v -race -coverprofile=coverage.out ./...
+        go tool cover -func=coverage.out
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+
+  command-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Build kadprobe
+      run: go build -o kadprobe ./cmd/kadprobe
+    
+    - name: Test command structure
+      run: |
+        cd cmd/kadprobe
+        go test -v -run TestCommandStructure
+    
+    - name: Test help commands
+      run: |
+        ./kadprobe --help
+        ./kadprobe test --help
+        ./kadprobe check --help
+        ./kadprobe validate --help
+        ./kadprobe scan --help
+
+  integration-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Build kadprobe
+      run: go build -o kadprobe ./cmd/kadprobe
+    
+    - name: Run test command tests
+      run: |
+        ./kadprobe test examples/tests/no-latest-tag-test.yaml
+        ./kadprobe test examples/tests/resource-limits-test.yaml
+    
+    - name: Run validate command tests
+      run: |
+        ./kadprobe validate examples/tests/no-latest-tag-test.yaml
+        ./kadprobe validate examples/tests/resource-limits-test.yaml
+    
+    - name: Run check command tests (local mode)
+      run: |
+        ./kadprobe check examples/manifests/denied-pod-latest-tag.yaml --rules examples/policies/no-latest-tag-policy.yaml
+        ./kadprobe check examples/manifests/allowed-pod-specific-tag.yaml --rules examples/policies/no-latest-tag-policy.yaml
+
+  e2e-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Create kind cluster
+      uses: helm/kind-action@v1.8.0
+      with:
+        cluster_name: kind
+    
+    - name: Build kadprobe
+      run: go build -o kadprobe ./cmd/kadprobe
+    
+    - name: Run E2E tests
+      run: |
+        cd test/e2e
+        go test -v -run TestNewCommandStructure
+    
+    - name: Run E2E test script
+      run: ./scripts/run-e2e-tests-new.sh
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+        args: --timeout=5m
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run gosec
+      uses: securego/gosec@master
+      with:
+        args: ./...
+    
+    - name: Run govulncheck
+      run: |
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+        govulncheck ./...

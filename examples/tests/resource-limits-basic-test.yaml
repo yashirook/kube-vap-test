@@ -1,0 +1,32 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: resource-limits-basic-test
+spec:
+  source:
+    type: local
+    files:
+      - "./examples/policies/resource-limits-policy.yaml"
+  testCases:
+    - name: "test-with-resources"
+      description: "Verify that Pods with resource limits and requests comply with the policy"
+      object:
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: test-pod
+          namespace: default
+        spec:
+          containers:
+          - name: nginx
+            image: nginx:1.21.0
+            resources:
+              limits:
+                memory: "256Mi"
+                cpu: "500m"
+              requests:
+                memory: "128Mi"
+                cpu: "200m"
+      operation: CREATE
+      expected:
+        allowed: true

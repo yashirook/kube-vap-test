@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pinned-tag-deployment
+  labels:
+    app: pinned-tag-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pinned-tag-deployment
+  template:
+    metadata:
+      labels:
+        app: pinned-tag-deployment
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.21.0
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m" 

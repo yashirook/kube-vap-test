@@ -1,0 +1,114 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "error-handling-policy"
+spec:
+  # MatchConditions that can cause various types of errors
+  matchConditions:
+  # Only apply to workload resources
+  - name: "workload-resources-only"
+    expression: |
+      object.kind in ['Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob']
+  # Condition with type checking
+  - name: "type-safe-condition"
+    expression: |
+      has(object.metadata.namespace) &&
+      type(object.metadata.namespace) == string &&
+      object.metadata.namespace != ''
+  
+  # Condition that checks for optional fields safely
+  - name: "safe-optional-field-access"
+    expression: |
+      (!has(object.metadata.labels) || type(object.metadata.labels) == map) &&
+      (!has(object.spec) || !has(object.spec.replicas) || type(object.spec.replicas) == int)
+  
+  # Variables with error-prone expressions
+  variables:
+  - name: "labelCount"
+    expression: |
+      has(object.metadata.labels) ? size(object.metadata.labels) : 0
+  
+  - name: "appLabel"
+    expression: |
+      has(object.metadata.labels) && has(object.metadata.labels.app) ? 
+      object.metadata.labels.app : 
+      'unknown'
+  
+  - name: "replicaMultiplier"
+    expression: |
+      has(object.spec) && has(object.spec.replicas) && object.spec.replicas > 0 ? 
+      (object.spec.replicas * 2) : 
+      2
+  
+  - name: "containerCount"
+    expression: |
+      has(object.spec) && has(object.spec.template) && 
+      has(object.spec.template.spec) && has(object.spec.template.spec.containers) ? 
+      size(object.spec.template.spec.containers) : 
+      0
+  
+  - name: "firstContainerName"
+    expression: |
+      variables.containerCount > 0 ? 
+      object.spec.template.spec.containers[0].name : 
+      'no-container'
+  
+  # Validations with comprehensive error handling
+  validations:
+  # Validation 1: Safe division and arithmetic
+  - expression: |
+      variables.labelCount == 0 || 
+      (variables.replicaMultiplier / variables.labelCount) >= 1
+    message: "Replica multiplier to label ratio must be at least 1"
+    messageExpression: |
+      'Resource has ' + string(variables.labelCount) + ' labels and replica multiplier of ' + 
+      string(variables.replicaMultiplier) + '. Ratio: ' + 
+      string(variables.labelCount > 0 ? variables.replicaMultiplier / variables.labelCount : 0)
+  
+  # Validation 2: String operations with null safety
+  - expression: |
+      variables.appLabel == 'unknown' || 
+      variables.appLabel.matches('^[a-z][a-z0-9-]*$')
+    message: "App label must follow naming convention"
+    messageExpression: |
+      'App label "' + variables.appLabel + '" does not match required pattern. ' +
+      'Must start with lowercase letter and contain only lowercase letters, numbers, and hyphens.'
+  
+  # Validation 3: Array bounds checking
+  - expression: |
+      variables.containerCount == 0 || 
+      (
+        variables.firstContainerName != 'init' &&
+        variables.firstContainerName != 'sidecar'
+      )
+    message: "First container cannot be named 'init' or 'sidecar'"
+    messageExpression: |
+      'First container is named "' + variables.firstContainerName + 
+      '". The first container should be the main application container, not init or sidecar.'
+  
+  # Validation 4: Complex conditional with multiple type checks
+  - expression: |
+      !has(object.spec.template.spec.securityContext) ||
+      !has(object.spec.template.spec.securityContext.runAsUser) ||
+      (
+        type(object.spec.template.spec.securityContext.runAsUser) == int &&
+        object.spec.template.spec.securityContext.runAsUser > 10000
+      )
+    message: "Security context runAsUser must be > 10000"
+    messageExpression: |
+      has(object.spec.template.spec.securityContext.runAsUser) ?
+      'Security context runAsUser is set to ' + string(object.spec.template.spec.securityContext.runAsUser) + 
+      '. Must be greater than 10000 for security compliance.' :
+      'Security context runAsUser is not set but would need to be > 10000 if specified.'
+  
+  # Validation 5: List operations with existence checks
+  - expression: |
+      !has(object.spec.template.spec.containers) ||
+      object.spec.template.spec.containers.all(c, 
+        !has(c.env) || 
+        !c.env.exists(e, has(e.name) && e.name == 'SECRET_KEY')
+      )
+    message: "Containers must not expose SECRET_KEY as environment variable"
+    messageExpression: |
+      'Found container with SECRET_KEY environment variable. ' +
+      'Secret values should be mounted from Secrets, not set as environment variables.'

@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invalid-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: invalid-deployment
+  template:
+    metadata:
+      labels:
+        app: invalid-deployment
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.21.0
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m" 

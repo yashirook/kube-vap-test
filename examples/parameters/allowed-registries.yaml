@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: allowed-registries
+  namespace: default
+data:
+  allowedRegistries: "docker.io/,gcr.io/,quay.io/,registry.k8s.io/"
+  # Comma-separated list of allowed container registries
+  # Add your private registries here

@@ -1,0 +1,50 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: k8s-1-30-features-policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["apps"]
+      resources: ["deployments"]
+      operations: ["CREATE", "UPDATE"]
+  variables:
+  # Variable composition example
+  - name: replicaCount
+    expression: "object.spec.replicas"
+  - name: isHighReplica
+    expression: "variables.replicaCount > 10"
+  - name: containerNames
+    expression: "object.spec.template.spec.containers.map(c, c.name)"
+  - name: hasNginx
+    expression: "variables.containerNames.exists(name, name == 'nginx')"
+  
+  # Match conditions (would be evaluated before validations in real K8s 1.30)
+  # Note: kube-vap-test may not support this yet, but we document it
+  # matchConditions:
+  # - name: "exclude-kube-system"
+  #   expression: "object.metadata.namespace != 'kube-system'"
+  
+  validations:
+  # Example with static message
+  - expression: "variables.replicaCount <= 100"
+    message: "Replica count exceeds maximum allowed (100)"
+    reason: "ReplicaLimit"
+    
+  # Example with messageExpression (K8s 1.30 feature)
+  # Note: kube-vap-test currently doesn't support messageExpression, 
+  # so we use static message as fallback
+  - expression: "!variables.isHighReplica || variables.hasNginx"
+    message: "High replica deployments (>10) must include nginx container"
+    # messageExpression would be:
+    # messageExpression: "'Deployment with ' + string(variables.replicaCount) + ' replicas must include nginx container'"
+    reason: "HighReplicaPolicy"
+    
+  # Variable composition in validation
+  - expression: |
+      variables.containerNames.all(name, 
+        name.matches('^[a-z][a-z0-9-]*$')
+      )
+    message: "All container names must be lowercase alphanumeric with hyphens"
+    reason: "NamingPolicy"

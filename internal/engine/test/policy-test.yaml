@@ -1,0 +1,16 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: test-policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["pods"]
+  validations:
+  - expression: "!has(object.spec.containers[0].securityContext) || !has(object.spec.containers[0].securityContext.privileged) || object.spec.containers[0].securityContext.privileged != true"
+    message: "Privileged containers are not allowed"
+    reason: "Prohibited" 

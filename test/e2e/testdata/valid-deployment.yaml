@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valid-deployment
+  labels:
+    app: valid-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: valid-deployment
+  template:
+    metadata:
+      labels:
+        app: valid-deployment
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.21.0
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m" 

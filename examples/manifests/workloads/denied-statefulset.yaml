@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web-no-resources
+  namespace: default
+spec:
+  serviceName: "nginx-no-resources"
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-no-resources
+  template:
+    metadata:
+      labels:
+        app: nginx-no-resources
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.21.0
+        ports:
+        - containerPort: 80
+          name: web
+        # No resource limits
+  volumeClaimTemplates:
+  - metadata:
+      name: www
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi 

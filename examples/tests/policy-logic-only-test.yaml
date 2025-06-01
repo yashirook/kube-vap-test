@@ -1,0 +1,64 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: policy-logic-only-test
+spec:
+  source:
+    type: local
+    files:
+      - "./examples/policies/simple-validation-policy.yaml"
+      # Note: Binding file may be included but will be ignored with --skip-bindings
+  testCases:
+  - name: "test-complex-cel-expression"
+    description: "Test complex CEL validation logic without binding constraints"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod
+        namespace: default
+        labels:
+          app: test
+          env: production
+      spec:
+        containers:
+        - name: app
+          image: nginx:1.21.0
+          env:
+          - name: ENV
+            value: "production"
+          - name: DEBUG
+            value: "false"
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "test-validation-failure"
+    description: "Test that validation logic correctly rejects invalid configuration"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod
+        namespace: default
+        labels:
+          app: test
+          env: production
+      spec:
+        containers:
+        - name: app
+          image: nginx:1.21.0
+          env:
+          - name: ENV
+            value: "production"
+          - name: DEBUG
+            value: "true"  # DEBUG should be false in production
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "InvalidConfiguration"
+      messageContains: "DEBUG must be false in production environment"
+      
+# Usage: kube-vap-test run policy-logic-only-test.yaml --skip-bindings
+# This will test only the CEL expressions in the policy, ignoring any namespace
+# or resource matching rules defined in the binding

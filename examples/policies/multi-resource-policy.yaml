@@ -1,0 +1,18 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: multi-resource-policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      resources: ["pods", "services"]
+      operations: ["CREATE", "UPDATE"]
+    - apiGroups: ["apps"]
+      resources: ["deployments", "statefulsets"]
+      operations: ["CREATE", "UPDATE"]
+  validations:
+  - expression: "has(object.metadata.labels) && has(object.metadata.labels.app)"
+    message: "All resources must have an app label"
+    reason: "MissingAppLabel" 

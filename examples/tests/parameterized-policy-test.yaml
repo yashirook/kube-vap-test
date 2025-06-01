@@ -1,0 +1,45 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: parameterized-policy-test
+spec:
+  source:
+    type: local
+    files:
+      - "./examples/policies/image-registry-policy-static.yaml"
+  # Note: This uses a static policy instead of parameterized one
+  # until parameter support is implemented
+  testCases:
+  - name: "allowed-image-from-approved-registry"
+    description: "Images from approved registries are allowed"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod
+        namespace: default
+      spec:
+        containers:
+        - name: app
+          image: docker.io/nginx:1.21.0
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "denied-image-from-unapproved-registry"
+    description: "Images from unapproved registries are denied"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod
+        namespace: default
+      spec:
+        containers:
+        - name: app
+          image: untrusted.registry.com/nginx:1.21.0
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "ImageRegistryPolicy"
+      messageContains: "must be from approved registries"

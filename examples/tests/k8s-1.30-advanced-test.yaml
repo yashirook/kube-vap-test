@@ -1,0 +1,245 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: k8s-1.30-advanced-features-test
+spec:
+  source:
+    type: local
+    files:
+      - examples/policies/k8s-1.30-advanced-policy.yaml
+  testCases:
+  # Test case 1: Valid production deployment
+  - name: "valid-production-deployment"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: web-app
+        namespace: production
+        labels:
+          app: web-app
+          version: v1.2.3
+          security-level: standard
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 200m
+                  memory: 256Mi
+            - name: app
+              image: myapp:v1.2.3
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 512Mi
+                limits:
+                  cpu: 1000m
+                  memory: 1Gi
+    operation: CREATE
+    expected:
+      allowed: true
+
+  # Test case 2: Single replica deployment (should fail)
+  - name: "single-replica-deployment"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: single-app
+        namespace: production
+        labels:
+          app: single-app
+          version: v1.0.0
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+            - name: app
+              image: myapp:v1.0.0
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'Deployment "single-app" has only 1 replica(s). Production deployments require at least 2 replicas for high availability.'
+
+  # Test case 3: Too many replicas (should fail)
+  - name: "too-many-replicas"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: large-app
+        namespace: production
+        labels:
+          app: large-app
+          version: v2.0.0
+      spec:
+        replicas: 15
+        template:
+          spec:
+            containers:
+            - name: app
+              image: myapp:v2.0.0
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'Deployment "large-app" requests 15 replicas, but the maximum allowed is 10. Consider horizontal scaling or resource optimization.'
+
+  # Test case 4: High-resource app without nginx (should fail)
+  - name: "high-resource-without-nginx"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: cpu-intensive-app
+        namespace: production
+        labels:
+          app: cpu-intensive-app
+          version: v1.0.0
+      spec:
+        replicas: 7
+        template:
+          spec:
+            containers:
+            - name: worker1
+              image: worker:v1.0.0
+              resources:
+                requests:
+                  cpu: 1000m
+                  memory: 1Gi
+            - name: worker2
+              image: worker:v1.0.0
+              resources:
+                requests:
+                  cpu: 1200m
+                  memory: 1Gi
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'High-resource deployment "cpu-intensive-app" with 7 replicas must include nginx container for load balancing.'
+
+  # Test case 5: High-security app with privileged container (should fail)
+  - name: "high-security-privileged"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: secure-app
+        namespace: production
+        labels:
+          app: secure-app
+          version: v1.0.0
+          security-level: high
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+            - name: app
+              image: secure-app:v1.0.0
+              securityContext:
+                privileged: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'Deployment "secure-app" is marked as security-level=high but contains privileged containers. High-security applications must run with non-privileged containers only.'
+
+  # Test case 6: Missing resource requests (should fail)
+  - name: "missing-resource-requests"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: incomplete-app
+        namespace: production
+        labels:
+          app: incomplete-app
+          version: v1.0.0
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+            - name: app
+              image: myapp:v1.0.0
+              # Missing resource requests
+            - name: sidecar
+              image: sidecar:v1.0.0
+              resources:
+                requests:
+                  cpu: 50m
+                  # Missing memory request
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'Deployment "incomplete-app" has containers without resource requests. All production containers must specify CPU and memory requests.'
+
+  # Test case 7: Non-production namespace (should be allowed - no matching)
+  - name: "staging-deployment-ignored"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: staging-app
+        namespace: staging
+        labels:
+          app: staging-app
+          version: v1.0.0
+      spec:
+        replicas: 1  # Would normally fail in production
+        template:
+          spec:
+            containers:
+            - name: app
+              image: myapp:v1.0.0
+              # No resource requests - would normally fail
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't match staging namespace
+
+  # Test case 8: Non-deployment workload (should be allowed - no matching)
+  - name: "service-ignored"
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: my-service
+        namespace: production
+        labels:
+          app: my-service
+          version: v1.0.0
+      spec:
+        selector:
+          app: my-app
+        ports:
+        - port: 80
+          targetPort: 8080
+    operation: CREATE
+    expected:
+      allowed: true  # Policy only matches Deployments

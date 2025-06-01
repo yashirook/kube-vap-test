@@ -1,0 +1,288 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: error-handling-test
+spec:
+  source:
+    type: local
+    files:
+      - examples/policies/error-handling-policy.yaml
+  testCases:
+  # Test 1: Valid deployment with all safety checks passing
+  - name: "valid-deployment"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: safe-app
+        namespace: default
+        labels:
+          app: myapp
+          version: v1
+      spec:
+        replicas: 2
+        template:
+          spec:
+            securityContext:
+              runAsUser: 10001
+            containers:
+            - name: myapp
+              image: myapp:v1.0.0
+              env:
+              - name: APP_VERSION
+                value: "1.0.0"
+    operation: CREATE
+    expected:
+      allowed: true
+
+  # Test 2: Deployment with no labels (tests division by zero handling)
+  - name: "no-labels-deployment"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: no-labels-app
+        namespace: default
+        # No labels
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+            - name: app
+              image: app:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: true  # Should handle labelCount == 0 gracefully
+
+  # Test 3: Invalid app label format
+  - name: "invalid-app-label"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: bad-label-app
+        namespace: default
+        labels:
+          app: "MyApp-123"  # Contains uppercase
+          tier: backend
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+            - name: app
+              image: app:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'App label "MyApp-123" does not match required pattern. Must start with lowercase letter and contain only lowercase letters, numbers, and hyphens.'
+
+  # Test 4: First container named 'init'
+  - name: "init-as-first-container"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: init-first-app
+        namespace: default
+        labels:
+          app: webapp
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+            - name: init  # Invalid as first container
+              image: init:v1.0.0
+            - name: app
+              image: app:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'First container is named "init". The first container should be the main application container, not init or sidecar.'
+
+  # Test 5: Low runAsUser value
+  - name: "low-run-as-user"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: low-uid-app
+        namespace: default
+        labels:
+          app: webapp
+      spec:
+        replicas: 2
+        template:
+          spec:
+            securityContext:
+              runAsUser: 1000  # Too low
+            containers:
+            - name: app
+              image: app:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'Security context runAsUser is set to 1000. Must be greater than 10000 for security compliance.'
+
+  # Test 6: SECRET_KEY in environment
+  - name: "secret-key-in-env"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: secrets-app
+        namespace: default
+        labels:
+          app: webapp
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+            - name: app
+              image: app:v1.0.0
+              env:
+              - name: DATABASE_URL
+                value: "postgres://localhost/db"
+              - name: SECRET_KEY  # Not allowed
+                value: "super-secret-value"
+    operation: CREATE
+    expected:
+      allowed: false
+      message: 'Found container with SECRET_KEY environment variable. Secret values should be mounted from Secrets, not set as environment variables.'
+
+  # Test 7: Empty namespace (matchCondition should fail)
+  - name: "empty-namespace"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: no-namespace-app
+        namespace: ""  # Empty namespace
+        labels:
+          app: webapp
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+            - name: app
+              image: app:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't apply with empty namespace
+
+  # Test 8: Non-deployment resource (matchCondition should handle gracefully)
+  - name: "non-deployment-resource"
+    object:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: my-config
+        namespace: default
+      data:
+        key1: value1
+        key2: value2
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't apply to ConfigMaps
+
+  # Test 9: Deployment with no containers
+  - name: "no-containers"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: no-containers-app
+        namespace: default
+        labels:
+          app: webapp
+      spec:
+        replicas: 1
+        template:
+          spec:
+            # No containers defined
+            volumes:
+            - name: data
+              emptyDir: {}
+    operation: CREATE
+    expected:
+      allowed: true  # Should handle missing containers gracefully
+
+  # Test 10: Complex scenario with multiple edge cases
+  - name: "multiple-edge-cases"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: edge-case-app
+        namespace: default
+        labels:
+          app: "edge-case-123"  # Valid format
+          tier: backend
+          env: prod
+      spec:
+        replicas: 1  # Low replicas for the calculation test
+        template:
+          spec:
+            securityContext:
+              runAsUser: 20000
+              runAsGroup: 20000
+            containers:
+            - name: monitor
+              image: monitor:v1.0.0
+              env:
+              - name: LOG_LEVEL
+                value: "info"
+            - name: sidecar
+              image: sidecar:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: false  # Fails ratio check (2/3 < 1 in integer division)
+      message: "Resource has 3 labels and replica multiplier of 2. Ratio: 0"
+
+  # Test 11: String type in numeric field (should be caught by matchCondition)
+  - name: "invalid-type-replicas"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: bad-type-app
+        namespace: default
+        labels:
+          app: webapp
+      spec:
+        replicas: "two"  # String instead of int - invalid YAML but tests type checking
+        template:
+          spec:
+            containers:
+            - name: app
+              image: app:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: true  # matchCondition should safely handle type mismatch
+
+  # Test 12: Very long label values (stress test)
+  - name: "long-label-values"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: long-labels-app
+        namespace: default
+        labels:
+          app: "very-long-application-name-that-still-follows-naming-conventions"
+          description: "this-is-an-extremely-long-description-label-that-contains-many-words"
+          version: "v1-0-0-beta-1-rc-2-snapshot-20240101-build-12345"
+      spec:
+        replicas: 5
+        template:
+          spec:
+            containers:
+            - name: app
+              image: app:v1.0.0
+    operation: CREATE
+    expected:
+      allowed: true  # Should handle long strings without issues

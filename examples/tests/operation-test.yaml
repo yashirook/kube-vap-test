@@ -1,0 +1,57 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: operation-test
+spec:
+  source:
+    type: local
+    files:
+      - "examples/policies/operation-test.yaml"
+  testCases:
+  - name: "test-create-operation"
+    description: "CREATE operation should be allowed"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: test-deployment
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: test
+        template:
+          metadata:
+            labels:
+              app: test
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21.0
+    operation: CREATE
+    expected:
+      allowed: true
+  - name: "test-update-operation"
+    description: "UPDATE operation should be denied"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: test-deployment
+      spec:
+        replicas: 2
+        selector:
+          matchLabels:
+            app: test
+        template:
+          metadata:
+            labels:
+              app: test
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21.0
+    operation: UPDATE
+    expected:
+      allowed: false
+      messageContains: "Only CREATE operations are allowed" 

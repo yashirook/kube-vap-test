@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-limits
+  labels:
+    app: test-app
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.19
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-without-limits
+  labels:
+    app: test-app-no-limits
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.19
+    # No resource limits 

@@ -1,0 +1,43 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: policy-source-test
+spec:
+  source:
+    type: local
+    files:
+      - "./examples/policies/no-latest-tag-policy.yaml"
+  testCases:
+  - name: "allowed-pod-with-specific-tag"
+    description: "Pods with specific tags are allowed"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "denied-pod-with-latest-tag"
+    description: "Pods using latest tag are denied"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:latest
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "ImageTagPolicy"
+      messageContains: "Using the 'latest' tag is not allowed"

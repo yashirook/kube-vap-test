@@ -1,0 +1,27 @@
+apiVersion: custom.example.com/v1
+kind: CustomWorkload
+metadata:
+  name: custom-app
+  namespace: default
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: custom-app
+    spec:
+      containers:
+      - name: custom-container
+        image: custom-image:1.0.0
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
+  customConfig:
+    key1: value1
+    key2: value2 

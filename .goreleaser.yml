@@ -1,0 +1,77 @@
+project_name: kube-vap-test
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: kube-vap-test
+    main: ./cmd/kube-vap-test
+    binary: kube-vap-test
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/yashirook/kube-vap-test/cmd/kube-vap-test/commands.Version={{.Version}}
+      - -X github.com/yashirook/kube-vap-test/cmd/kube-vap-test/commands.Commit={{.Commit}}
+      - -X github.com/yashirook/kube-vap-test/cmd/kube-vap-test/commands.BuildDate={{.Date}}
+  
+  - id: kubectl-kube-vap-test
+    main: ./cmd/kube-vap-test
+    binary: kubectl-kube-vap-test
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/yashirook/kube-vap-test/cmd/kube-vap-test/commands.Version={{.Version}}
+      - -X github.com/yashirook/kube-vap-test/cmd/kube-vap-test/commands.Commit={{.Commit}}
+      - -X github.com/yashirook/kube-vap-test/cmd/kube-vap-test/commands.BuildDate={{.Date}}
+
+archives:
+  - id: kube-vap-test
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+release:
+  github:
+    owner: yashirook
+    name: kube-vap-test
+  draft: true
+  prerelease: auto

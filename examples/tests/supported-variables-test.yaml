@@ -1,0 +1,37 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: supported-variables-test
+spec:
+  source:
+    type: local
+    files:
+      - "examples/policies/supported-variables-test.yaml"
+  testCases:
+  - name: "test-supported-variables"
+    description: "Test supported variables"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: test-deployment
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: test
+        template:
+          metadata:
+            labels:
+              app: test
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21.0
+              resources:
+                limits:
+                  cpu: "100m"
+                  memory: "128Mi"
+    operation: CREATE
+    expected:
+      allowed: true 

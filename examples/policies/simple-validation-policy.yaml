@@ -1,0 +1,31 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: simple-validation-policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      resources: ["pods"]
+      operations: ["CREATE", "UPDATE"]
+  validations:
+  # Production pods must not have DEBUG enabled
+  - expression: |
+      !(has(object.metadata.labels) && 
+        has(object.metadata.labels.env) && 
+        object.metadata.labels.env == 'production' &&
+        object.spec.containers.exists(c,
+          has(c.env) && c.env.exists(e, e.name == 'DEBUG' && e.value == 'true')
+        ))
+    message: "DEBUG must be false in production environment"
+    reason: "InvalidConfiguration"
+  
+  # Container naming convention
+  - expression: |
+      object.spec.containers.all(c,
+        c.name.matches('^[a-z][a-z0-9-]*$') &&
+        size(c.name) <= 30
+      )
+    message: "Container names must be lowercase alphanumeric with hyphens, max 30 chars"
+    reason: "NamingConvention"

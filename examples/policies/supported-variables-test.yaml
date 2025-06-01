@@ -1,0 +1,21 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: supported-variables-test
+spec:
+  matchConstraints:
+    resourceRules:
+    - apiGroups:   ["apps"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE", "UPDATE"]
+      resources:   ["deployments"]
+  validations:
+  - expression: "true"
+    message: "Always succeeds test"
+  variables:
+  - name: objectInfo
+    expression: "object.kind + ' ' + object.metadata.name"
+  - name: containerNames
+    expression: "object.spec.template.spec.containers.map(c, c.name)"
+  - name: operationType
+    expression: "operation" 

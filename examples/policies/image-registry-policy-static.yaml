@@ -1,0 +1,20 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: image-registry-policy-static
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      resources: ["pods"]
+      operations: ["CREATE", "UPDATE"]
+  validations:
+  - expression: |
+      object.spec.containers.all(container,
+        ['docker.io/', 'gcr.io/', 'quay.io/', 'registry.k8s.io/'].exists(registry,
+          container.image.startsWith(registry)
+        )
+      )
+    message: "Container images must be from approved registries (docker.io/, gcr.io/, quay.io/, registry.k8s.io/)"
+    reason: "ImageRegistryPolicy"

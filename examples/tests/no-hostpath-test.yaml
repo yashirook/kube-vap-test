@@ -1,0 +1,58 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: no-hostpath-test
+spec:
+  source:
+    type: local
+    files:
+      - "./examples/policies/no-hostpath-policy.yaml"
+  testCases:
+  - name: "allowed-pod-no-hostpath"
+    description: "Pods without HostPath are allowed"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: nginx-no-hostpath
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+          volumeMounts:
+          - name: config-volume
+            mountPath: /etc/nginx/conf.d
+        volumes:
+        - name: config-volume
+          configMap:
+            name: nginx-config
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "denied-pod-with-hostpath"
+    description: "Pods using HostPath are denied"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: nginx-with-hostpath
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+          volumeMounts:
+          - name: host-volume
+            mountPath: /host-data
+        volumes:
+        - name: host-volume
+          hostPath:
+            path: /data
+            type: Directory
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "HostPathVolumePolicy"
+      messageContains: "HostPath volumes are not allowed" 

@@ -1,0 +1,13 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "simple-matchconditions-policy"
+spec:
+  matchConditions:
+  - name: "namespace-check"
+    expression: "object.metadata.namespace == 'test'"
+  - name: "kind-check"
+    expression: "object.kind == 'Deployment'"
+  validations:
+  - expression: "object.spec.replicas >= 1"
+    message: "Replicas must be at least 1"

@@ -1,0 +1,33 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: cluster-policies-test
+spec:
+  source:
+    type: cluster  # Load all VAPs and VAPBs from the cluster
+  testCases:
+  - name: "test-pod-against-cluster-policies"
+    description: "Test a pod against all policies deployed in the cluster"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:latest
+          resources:
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        volumes:
+        - name: host-vol
+          hostPath:
+            path: /tmp
+            type: Directory
+    operation: CREATE
+    expected:
+      allowed: false  # Should be denied by one of the cluster policies
+      # Note: The exact reason depends on which policies are deployed

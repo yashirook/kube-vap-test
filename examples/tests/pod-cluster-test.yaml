@@ -1,0 +1,109 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: pod-resource-limits-test
+spec:
+  source:
+    type: local
+    files:
+      - "examples/policies/resource-limits-policy.yaml"
+      - "examples/policies/no-privileged-policy.yaml"
+      - "examples/policies/no-hostpath-policy.yaml"
+  testCases:
+  - name: "allowed-pod-with-resources"
+    description: "Pods with resource limits are allowed"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: nginx-with-limits
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "denied-pod-without-resources"
+    description: "Pods without resource limits are denied"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: nginx-without-limits
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+          # No resource limits
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "ResourceLimitsPolicy"
+      messageContains: "All containers must have memory and CPU resource limits"
+  
+  - name: "denied-pod-with-privileged"
+    description: "Pods with privileged containers are denied"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: privileged-pod
+        namespace: default
+      spec:
+        containers:
+        - name: privileged-container
+          image: nginx:1.21.0
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+          securityContext:
+            privileged: true
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "PrivilegedContainerPolicy"
+      messageContains: "Privileged containers are not allowed"
+      
+  - name: "denied-pod-with-hostpath"
+    description: "Pods using hostPath volumes are denied"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: hostpath-pod
+        namespace: default
+      spec:
+        containers:
+        - name: hostpath-container
+          image: nginx:1.21.0
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+        volumes:
+        - name: host-volume
+          hostPath:
+            path: /var/log
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "HostPathVolumePolicy"
+      messageContains: "HostPath volumes are not allowed" 

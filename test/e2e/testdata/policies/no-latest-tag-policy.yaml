@@ -1,0 +1,15 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: no-latest-tag-policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["apps"]
+      resources: ["deployments"]
+      operations: ["CREATE", "UPDATE"]
+  validations:
+  - expression: "!object.spec.template.spec.containers.exists(c, c.image.endsWith(':latest'))"
+    message: "Using 'latest' tag for container images is prohibited"
+    reason: "LatestTagPolicy" 

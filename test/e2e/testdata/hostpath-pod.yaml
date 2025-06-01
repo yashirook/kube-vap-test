@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hostpath-pod
+  labels:
+    app: test-pod
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.21.0
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: host-volume
+      mountPath: /mnt/hostpath
+  volumes:
+  - name: host-volume
+    hostPath:
+      path: /tmp
+      type: Directory 

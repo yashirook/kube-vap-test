@@ -1,0 +1,114 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: k8s-1-30-features-test
+spec:
+  source:
+    type: local
+    files:
+      - "examples/policies/k8s-1.30-features-policy.yaml"
+  testCases:
+  - name: "normal-replica-count"
+    description: "Deployment with normal replica count should be allowed"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: normal-deployment
+        namespace: default
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21.0
+    operation: CREATE
+    expected:
+      allowed: true
+      
+  - name: "excessive-replica-count"
+    description: "Deployment with excessive replicas should be denied"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: high-replica-deployment
+        namespace: default
+      spec:
+        replicas: 150
+        template:
+          spec:
+            containers:
+            - name: app
+              image: myapp:1.0.0
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "MultipleViolations"
+      messageContains: "exceeds maximum allowed"
+      
+  - name: "high-replica-without-nginx"
+    description: "High replica deployment without nginx should be denied"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: high-replica-no-nginx
+        namespace: default
+      spec:
+        replicas: 20
+        template:
+          spec:
+            containers:
+            - name: app
+              image: myapp:1.0.0
+            - name: sidecar
+              image: sidecar:1.0.0
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "HighReplicaPolicy"
+      messageContains: "must include nginx container"
+      
+  - name: "high-replica-with-nginx"
+    description: "High replica deployment with nginx should be allowed"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: high-replica-with-nginx
+        namespace: default
+      spec:
+        replicas: 20
+        template:
+          spec:
+            containers:
+            - name: nginx
+              image: nginx:1.21.0
+            - name: app
+              image: myapp:1.0.0
+    operation: CREATE
+    expected:
+      allowed: true
+      
+  - name: "invalid-container-names"
+    description: "Deployment with invalid container names should be denied"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: bad-names
+        namespace: default
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+            - name: "Invalid_Name"
+              image: nginx:1.21.0
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "NamingPolicy"
+      messageContains: "must be lowercase alphanumeric"

@@ -1,0 +1,88 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: multi-policy-test
+spec:
+  source:
+    type: local
+    files:
+      - "examples/policies/no-latest-tag-policy.yaml"
+      - "examples/policies/no-privileged-policy.yaml"
+  testCases:
+    - name: allowed-pod-complies-with-all-policies
+      description: Pods that comply with all policies are allowed
+      operation: CREATE
+      object:
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: good-pod
+        spec:
+          containers:
+          - name: nginx
+            image: nginx:1.19.0
+            securityContext:
+              privileged: false
+
+      expected:
+        allowed: true
+
+    - name: denied-pod-latest-tag
+      description: Pods using latest tag are denied
+      operation: CREATE
+      object:
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: bad-tag-pod
+        spec:
+          containers:
+          - name: nginx
+            image: nginx:latest
+            securityContext:
+              privileged: false
+
+      expected:
+        allowed: false
+        reason: ImageTagPolicy
+        messageContains: "'latest' tag is not allowed"
+
+    - name: denied-pod-privileged
+      description: Pods with privileged containers are denied
+      operation: CREATE
+      object:
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: privileged-pod
+        spec:
+          containers:
+          - name: nginx
+            image: nginx:1.19.0
+            securityContext:
+              privileged: true
+
+      expected:
+        allowed: false
+        reason: PrivilegedContainerPolicy
+        messageContains: "Privileged containers are not allowed"
+
+    - name: denied-pod-violates-both-policies
+      description: Pods violating both policies are denied
+      operation: CREATE
+      object:
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: double-violation-pod
+        spec:
+          containers:
+          - name: nginx
+            image: nginx:latest
+            securityContext:
+              privileged: true
+
+      expected:
+        allowed: false
+        # Violates both policies but only one error is checked
+        messageContains: "not allowed" 

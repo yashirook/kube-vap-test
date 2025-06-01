@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: denied-pod-init
+  namespace: default
+spec:
+  initContainers:
+  - name: init-nginx
+    image: nginx:latest
+  containers:
+  - name: nginx
+    image: nginx:1.25.0
+  - name: redis
+    image: redis:7.0.14 

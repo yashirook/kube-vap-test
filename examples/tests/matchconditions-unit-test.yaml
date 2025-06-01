@@ -1,0 +1,69 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: matchconditions-unit-test
+spec:
+  source:
+    type: local
+    files:
+      - examples/policies/simple-matchconditions-policy.yaml
+  testCases:
+  # Test 1: Both matchConditions pass
+  - name: "matching-deployment"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: test-app
+        namespace: test
+      spec:
+        replicas: 2
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  # Test 2: Wrong namespace (matchCondition fails)
+  - name: "wrong-namespace"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: test-app
+        namespace: production
+      spec:
+        replicas: 0  # Would fail if policy applied
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't apply
+  
+  # Test 3: Wrong kind (matchCondition fails)
+  - name: "wrong-kind"
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: test-service
+        namespace: test
+      spec:
+        selector:
+          app: test
+        ports:
+        - port: 80
+    operation: CREATE
+    expected:
+      allowed: true  # Policy doesn't apply
+  
+  # Test 4: Matching with validation failure
+  - name: "matching-with-failure"
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: test-app
+        namespace: test
+      spec:
+        replicas: 0  # Fails validation
+    operation: CREATE
+    expected:
+      allowed: false
+      message: "Replicas must be at least 1"

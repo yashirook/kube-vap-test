@@ -1,0 +1,82 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: no-latest-tag-test
+spec:
+  source:
+    type: local
+    files:
+      - "./examples/policies/no-latest-tag-policy.yaml"
+  testCases:
+  - name: "allowed-pod-with-specific-tag"
+    description: "Pods with specific tags are allowed"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "denied-pod-with-latest-tag"
+    description: "Pods using latest tag are denied"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod-latest
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:latest
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "ImageTagPolicy"
+      messageContains: "not allowed"
+  
+  - name: "denied-pod-with-latest-tag-in-init-container"
+    description: "Pods using latest tag in init containers are denied"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod-init-latest
+        namespace: default
+      spec:
+        initContainers:
+        - name: init-nginx
+          image: nginx:latest
+        containers:
+        - name: main-nginx
+          image: nginx:1.21.0
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "ImageTagPolicy"
+      messageContains: "init containers"
+  
+  - name: "allowed-pod-with-multiple-containers"
+    description: "Pods with all containers using specific tags are allowed"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod-multi
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+        - name: redis
+          image: redis:6.2.5
+    operation: CREATE
+    expected:
+      allowed: true 

@@ -1,0 +1,70 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: no-privileged-test
+spec:
+  source:
+    type: local
+    files:
+      - "./examples/policies/no-privileged-policy.yaml"
+  testCases:
+  - name: "allowed-pod-no-privileged"
+    description: "Non-privileged pods are allowed"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: nginx-no-privileged
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+          securityContext:
+            privileged: false
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "denied-pod-privileged"
+    description: "Pods with privileged containers are denied"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: nginx-privileged
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+          securityContext:
+            privileged: true
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "PrivilegedContainerPolicy"
+      messageContains: "Privileged containers are not allowed"
+  
+  - name: "denied-pod-with-privileged-init-container"
+    description: "Pods with privileged init containers are denied"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: nginx-init-privileged
+        namespace: default
+      spec:
+        initContainers:
+        - name: init-nginx
+          image: nginx:1.21.0
+          securityContext:
+            privileged: true
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "PrivilegedContainerPolicy"
+      messageContains: "Privileged containers are not allowed in init containers" 

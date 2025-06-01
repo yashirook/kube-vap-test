@@ -1,0 +1,15 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: no-hostpath-policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      resources: ["pods"]
+      operations: ["CREATE", "UPDATE"]
+  validations:
+  - expression: "!object.spec.volumes.exists(v, has(v.hostPath))"
+    message: "Using hostPath volumes is prohibited"
+    reason: "HostPathPolicy" 

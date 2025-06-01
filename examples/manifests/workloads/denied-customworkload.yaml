@@ -1,0 +1,21 @@
+apiVersion: custom.example.com/v1
+kind: CustomWorkload
+metadata:
+  name: custom-app-no-resources
+  namespace: default
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: custom-app-no-resources
+    spec:
+      containers:
+      - name: custom-container
+        image: custom-image:1.0.0
+        ports:
+        - containerPort: 8080
+        # No resource limits
+  customConfig:
+    key1: value1
+    key2: value2 

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-no-privileged
+  namespace: default
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.21.0
+    securityContext:
+      privileged: false 

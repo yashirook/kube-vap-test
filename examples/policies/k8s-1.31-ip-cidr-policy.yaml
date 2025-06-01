@@ -1,0 +1,87 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: network-security-policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      resources: ["pods", "services"]
+      operations: ["CREATE", "UPDATE"]
+  validations:
+  # IP address validations
+  - expression: |
+      !has(object.spec.hostIP) || isIP(object.spec.hostIP)
+    message: "hostIP must be a valid IP address"
+    
+  - expression: |
+      !has(object.spec.hostIP) || !ip(object.spec.hostIP).isLoopback()
+    message: "hostIP cannot be a loopback address"
+    
+  - expression: |
+      !has(object.spec.externalIP) || 
+      (isIP(object.spec.externalIP) && ip(object.spec.externalIP).isGlobalUnicast())
+    message: "externalIP must be a global unicast address"
+    
+  # CIDR validations
+  - expression: |
+      !has(object.spec.podCIDR) || isCIDR(object.spec.podCIDR)
+    message: "podCIDR must be a valid CIDR notation"
+    
+  - expression: |
+      !has(object.spec.podCIDR) || 
+      cidr(object.spec.podCIDR).prefixLength() >= 16
+    message: "podCIDR must have a prefix length of at least /16"
+    
+  - expression: |
+      !has(object.spec.podCIDR) || 
+      cidr(object.spec.podCIDR) == cidr(object.spec.podCIDR).masked()
+    message: "podCIDR must be in canonical form (network address)"
+    
+  # Combined IP and CIDR validations
+  - expression: |
+      !has(object.spec.podIP) || !has(object.spec.allowedCIDR) ||
+      cidr(object.spec.allowedCIDR).containsIP(object.spec.podIP)
+    message: "podIP must be within the allowed CIDR range"
+    
+  # DNS name format validations
+  - expression: |
+      !has(object.metadata.name) ||
+      format.dns1123Label().validate(object.metadata.name).hasValue() == false
+    message: "Invalid DNS1123 label"
+    messageExpression: |
+      format.dns1123Label().validate(object.metadata.name).hasValue() ?
+      "Invalid DNS1123 label: " + format.dns1123Label().validate(object.metadata.name).value().join(", ") :
+      "Invalid DNS1123 label"
+      
+  - expression: |
+      !has(object.spec.hostname) ||
+      format.dns1123Subdomain().validate(object.spec.hostname).hasValue() == false
+    message: "hostname must be a valid DNS subdomain"
+    
+  # UUID validation
+  - expression: |
+      !has(object.spec.requestID) ||
+      format.uuid().validate(object.spec.requestID).hasValue() == false
+    message: "requestID must be a valid UUID"
+    
+  # URI validation
+  - expression: |
+      !has(object.spec.webhookURL) ||
+      format.uri().validate(object.spec.webhookURL).hasValue() == false
+    message: "webhookURL must be a valid URI"
+
+---
+apiVersion: admissionregistration.k8s.io/v1  
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: network-security-policy-binding
+spec:
+  policyName: network-security-policy
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        network-policy: "enforced"

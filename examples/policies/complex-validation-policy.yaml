@@ -1,0 +1,58 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: complex-validation-policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      resources: ["pods"]
+      operations: ["CREATE", "UPDATE"]
+  variables:
+  - name: hasProductionLabel
+    expression: |
+      has(object.metadata.labels) && 
+      has(object.metadata.labels.env) && 
+      object.metadata.labels.env == 'production'
+  - name: hasDebugEnabled
+    expression: |
+      object.spec.containers.exists(c,
+        has(c.env) && c.env.exists(e, e.name == 'DEBUG' && e.value == 'true')
+      )
+  validations:
+  # Production pods must not have DEBUG enabled
+  - expression: |
+      !variables.hasProductionLabel || !variables.hasDebugEnabled
+    message: "DEBUG must be false in production environment"
+    reason: "InvalidConfiguration"
+  
+  # Production pods must have resource limits
+  - expression: |
+      !variables.hasProductionLabel ||
+      object.spec.containers.all(c,
+        has(c.resources) && 
+        has(c.resources.limits) &&
+        has(c.resources.limits.memory) &&
+        has(c.resources.limits.cpu)
+      )
+    message: "Production pods must have CPU and memory limits defined"
+    reason: "MissingResourceLimits"
+  
+  # Production pods must have specific security context
+  - expression: |
+      !variables.hasProductionLabel ||
+      (has(object.spec.securityContext) &&
+       has(object.spec.securityContext.runAsNonRoot) &&
+       object.spec.securityContext.runAsNonRoot == true)
+    message: "Production pods must run as non-root"
+    reason: "SecurityPolicy"
+    
+  # Container naming convention
+  - expression: |
+      object.spec.containers.all(c,
+        c.name.matches('^[a-z][a-z0-9-]*$') &&
+        size(c.name) <= 30
+      )
+    message: "Container names must be lowercase alphanumeric with hyphens, max 30 chars"
+    reason: "NamingConvention"

@@ -1,0 +1,25 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: pod-resource-limits-policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      resources: ["pods"]
+      operations: ["CREATE", "UPDATE"]
+  validations:
+  - expression: "has(object.spec.containers) && size(object.spec.containers) > 0"
+    message: "At least one container is required"
+    reason: "Invalid"
+  - expression: "object.spec.containers.all(c, has(c.resources) && has(c.resources.limits))"
+    message: "All containers must have resource limits"
+    reason: "Invalid"
+  - expression: "object.spec.containers.all(c, !has(c.resources) || has(c.resources.limits.memory))"
+    message: "All containers must have memory resource limits"
+    reason: "Invalid"
+  - expression: "object.spec.containers.all(c, !has(c.resources) || has(c.resources.limits.cpu))"
+    message: "All containers must have CPU resource limits"
+    reason: "Invalid" 

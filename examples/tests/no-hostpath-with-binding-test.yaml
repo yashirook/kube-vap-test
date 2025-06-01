@@ -1,0 +1,77 @@
+apiVersion: admission.k8s.io/v1
+kind: ValidatingAdmissionPolicyTest
+metadata:
+  name: no-hostpath-with-binding-test
+spec:
+  source:
+    type: local
+    files:
+      - "./examples/kube/no-hostpath-policy.yaml"
+      - "./examples/kube/no-hostpath-policy-binding.yaml"
+  testCases:
+  - name: "allowed-pod-without-hostpath"
+    description: "Pods without hostPath volumes are allowed"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+        volumes:
+        - name: config
+          configMap:
+            name: app-config
+    operation: CREATE
+    expected:
+      allowed: true
+  
+  - name: "denied-pod-with-hostpath"
+    description: "Pods with hostPath volumes are denied"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod-hostpath
+        namespace: default
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+          volumeMounts:
+          - name: host-vol
+            mountPath: /host
+        volumes:
+        - name: host-vol
+          hostPath:
+            path: /tmp
+            type: Directory
+    operation: CREATE
+    expected:
+      allowed: false
+      reason: "Forbidden"
+      messageContains: "hostPath volumes are not allowed"
+  
+  - name: "allowed-pod-in-kube-system"
+    description: "Pods in kube-system namespace are allowed (exempted by binding)"
+    object:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod-kube-system
+        namespace: kube-system
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:1.21.0
+        volumes:
+        - name: host-vol
+          hostPath:
+            path: /tmp
+            type: Directory
+    operation: CREATE
+    expected:
+      allowed: true  # Allowed because kube-system is exempted in the binding

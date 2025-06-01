@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: latest-tag-deployment
+  labels:
+    app: latest-tag-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: latest-tag-deployment
+  template:
+    metadata:
+      labels:
+        app: latest-tag-deployment
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:latest
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m" 
